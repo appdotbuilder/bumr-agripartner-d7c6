@@ -1,22 +1,44 @@
 
+import { db } from '../db';
+import { communityEventsTable, usersTable } from '../db/schema';
 import { type CreateCommunityEventInput, type CommunityEvent } from '../schema';
+import { eq } from 'drizzle-orm';
 
-export async function createCommunityEvent(input: CreateCommunityEventInput): Promise<CommunityEvent> {
-  // This is a placeholder declaration! Real code should be implemented here.
-  // The goal of this handler is to create community events like farm visits
-  // Should validate creator permissions and send notifications to participants
-  return Promise.resolve({
-    id: 1,
-    title: input.title,
-    description: input.description,
-    event_type: input.event_type,
-    event_date: input.event_date,
-    location: input.location,
-    fee: input.fee,
-    max_participants: input.max_participants || null,
-    current_participants: 0,
-    is_active: true,
-    created_by: input.created_by,
-    created_at: new Date(),
-  } as CommunityEvent);
-}
+export const createCommunityEvent = async (input: CreateCommunityEventInput): Promise<CommunityEvent> => {
+  try {
+    // Verify the creator exists
+    const creator = await db.select()
+      .from(usersTable)
+      .where(eq(usersTable.id, input.created_by))
+      .execute();
+
+    if (creator.length === 0) {
+      throw new Error('Creator user not found');
+    }
+
+    // Insert community event record
+    const result = await db.insert(communityEventsTable)
+      .values({
+        title: input.title,
+        description: input.description,
+        event_type: input.event_type,
+        event_date: input.event_date,
+        location: input.location,
+        fee: input.fee.toString(), // Convert number to string for numeric column
+        max_participants: input.max_participants,
+        created_by: input.created_by
+      })
+      .returning()
+      .execute();
+
+    // Convert numeric fields back to numbers before returning
+    const event = result[0];
+    return {
+      ...event,
+      fee: parseFloat(event.fee) // Convert string back to number
+    };
+  } catch (error) {
+    console.error('Community event creation failed:', error);
+    throw error;
+  }
+};
